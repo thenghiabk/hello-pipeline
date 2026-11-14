@@ -1,31 +1,31 @@
-# Tutorial: Luyện luồng Dev → Staging → Production với dự án Hello World
+# Tutorial: Practice Dev → Staging → Production Workflow with Hello World Project
 
-*Dành cho người mới bắt đầu · Thời gian: khoảng 60–90 phút · Chi phí: 0 đồng*
+*For beginners · Estimated time: 60–90 minutes · Cost: Free*
 
-## Bạn sẽ làm được gì
+## What You Will Learn
 
-Bạn sẽ xây một ứng dụng web Hello World cực nhỏ, rồi cho nó đi qua đúng luồng làm việc chuyên nghiệp đã nói ở trên:
+You will build a minimal Hello World web application and take it through a professional deployment workflow:
 
-1. Viết code và chạy thử trên máy bạn (Dev).
-2. Đẩy code lên Git, hệ thống CI tự chạy test và build Docker image.
-3. Test đạt thì tự động triển khai lên Staging.
-4. Kiểm tra trên Staging.
-5. Có người duyệt thì **cùng image đó** được triển khai lên Production.
-6. Có lỗi thì rollback về phiên bản cũ.
+1. Write and test code locally (Dev).
+2. Push code to Git; CI system automatically runs tests and builds the Docker image.
+3. If tests pass, automatically deploy to Staging.
+4. Verify on Staging.
+5. Once approved, deploy the **exact same image** to Production.
+6. Rollback to the previous version if errors occur.
 
-Để không tốn tiền thuê server, tutorial này “mô phỏng” Staging và Production: hai container Docker chạy trên hai cổng khác nhau (8081 và 8080) với cấu hình riêng. Cách làm, script và pipeline giống hệt thật. Khi có VPS, bạn chỉ cần đổi bước triển khai cuối cùng (xem phần cuối bài).
+To avoid server hosting costs, this tutorial "simulates" Staging and Production using two Docker containers running on different ports (8081 and 8080) with their own configurations. The methodology, scripts, and pipeline are identical to real-world setups. Once you have a VPS, you only need to change the final deployment step (see the end of this guide).
 
-## Chuẩn bị
+## Prerequisites
 
-- **Git** và một tài khoản **GitHub** (miễn phí).
-- **Docker** (Docker Desktop trên Windows/macOS, Docker Engine trên Linux). Kiểm tra bằng `docker --version`.
-- **Node.js 20 trở lên** để chạy thử ở máy (không bắt buộc, vì CI cũng chạy test). Kiểm tra bằng `node --version`.
-- Một trình soạn code, ví dụ VS Code.
-- Nếu dùng Windows: hãy chạy lệnh trong **Git Bash** hoặc **WSL2** để dùng được các lệnh bash trong bài.
+- **Git** and a free **GitHub** account.
+- **Docker** (Docker Desktop on Windows/macOS, Docker Engine on Linux). Verify with `docker --version`.
+- **Node.js 20 or higher** to run tests locally (optional, since CI also runs tests). Verify with `node --version`.
+- A code editor, e.g., VS Code.
+- Windows users: run commands in **Git Bash** or **WSL2** to use the bash commands in this guide.
 
-## Phần 1: Tạo dự án (môi trường Dev)
+## Part 1: Project Setup (Dev Environment)
 
-Mở terminal và tạo cấu trúc thư mục:
+Open your terminal and create the directory structure:
 
 ```bash
 mkdir hello-pipeline && cd hello-pipeline
@@ -33,7 +33,7 @@ git init -b main
 mkdir test env
 ```
 
-Tạo file **`package.json`**:
+Create **`package.json`**:
 
 ```json
 {
@@ -47,7 +47,7 @@ Tạo file **`package.json`**:
 }
 ```
 
-Tạo file **`server.js`**. Ứng dụng đọc tên môi trường và phiên bản từ biến môi trường, nên cùng một code chạy được ở mọi môi trường:
+Create **`server.js`**. The application reads the environment name and version from environment variables, allowing the same code to run across all environments:
 
 ```js
 const http = require('http');
@@ -63,20 +63,20 @@ function createServer() {
       return res.end(JSON.stringify({ status: 'ok' }));
     }
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end(`Hello World! Môi trường: ${APP_ENV} | Phiên bản: ${VERSION}\n`);
+    res.end(`Hello World! Environment: ${APP_ENV} | Version: ${VERSION}\n`);
   });
 }
 
 if (require.main === module) {
   createServer().listen(PORT, () => {
-    console.log(`Server chạy ở cổng ${PORT} (${APP_ENV})`);
+    console.log(`Server running at port ${PORT} in ${APP_ENV} environment with version ${VERSION}`);
   });
 }
 
 module.exports = { createServer };
 ```
 
-Tạo file **`test/server.test.js`**:
+Create **`test/server.test.js`**:
 
 ```js
 const test = require('node:test');
@@ -89,7 +89,7 @@ function startServer() {
   });
 }
 
-test('GET / trả về lời chào Hello World', async () => {
+test('GET / should return Hello World', async () => {
   const server = await startServer();
   try {
     const { port } = server.address();
@@ -103,7 +103,7 @@ test('GET / trả về lời chào Hello World', async () => {
   }
 });
 
-test('GET /health trả về ok', async () => {
+test('GET /health should return ok', async () => {
   const server = await startServer();
   try {
     const { port } = server.address();
@@ -117,18 +117,18 @@ test('GET /health trả về ok', async () => {
 });
 ```
 
-Chạy thử ở máy bạn:
+Test locally:
 
 ```bash
-npm test      # cả hai test phải báo pass
-npm start     # mở http://localhost:3000
+npm test      # both tests should pass
+npm start     # open http://localhost:3000
 ```
 
-Trình duyệt hiện: `Hello World! Môi trường: development | Phiên bản: dev`. Nhấn Ctrl+C để dừng. Vậy là bạn đã có môi trường **Dev**.
+Browser shows: `Hello World! Environment: development | Version: dev`. Press `Ctrl+C` to stop. You now have a working **Dev** environment.
 
-## Phần 2: Đóng gói bằng Docker
+## Part 2: Packaging with Docker
 
-Tạo file **`Dockerfile`**:
+Create **`Dockerfile`**:
 
 ```dockerfile
 FROM node:20-alpine
@@ -140,7 +140,7 @@ EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
-Tạo file **`.dockerignore`** (giữ image gọn):
+Create **`.dockerignore`** (keep the image lean):
 
 ```
 node_modules
@@ -150,18 +150,18 @@ test
 env
 ```
 
-Build và chạy thử image:
+Build and test run the image:
 
 ```bash
 docker build --build-arg APP_VERSION=v1 -t hello-pipeline:v1 .
 docker run --rm -p 3000:3000 hello-pipeline:v1
 ```
 
-Mở http://localhost:3000, bạn thấy `Môi trường: development` (giá trị mặc định). Nhấn Ctrl+C để dừng. Lưu ý image chỉ chứa code và phiên bản, **không** chứa thông tin riêng của môi trường nào.
+Open http://localhost:3000, you will see `Environment: development` (default value). Press `Ctrl+C` to stop. Notice that the image contains only code and version, **not** any environment-specific configuration.
 
-## Phần 3: Tách cấu hình theo môi trường
+## Part 3: Separating Environment Configuration
 
-Tạo hai file cấu hình trong thư mục `env`.
+Create two configuration files in the `env` directory:
 
 **`env/staging.env`**
 
@@ -175,13 +175,13 @@ APP_ENV=staging
 APP_ENV=production
 ```
 
-Trong dự án thật, các file này còn chứa địa chỉ database, API key... và **mật khẩu không bao giờ được commit lên Git** (hãy dùng GitHub Secrets hoặc dịch vụ quản lý bí mật). Ở bài này chỉ có tên môi trường nên an toàn để để trong repo.
+In real projects, these files also contain database URLs, API keys... and **passwords must never be committed to Git** (use GitHub Secrets or a secret management service). In this tutorial, they only contain environment names, so keeping them in the repo is safe.
 
-Nếu dùng Windows, hãy lưu các file `.env` và `deploy.sh` với kiểu xuống dòng **LF** (VS Code hiển thị ở góc dưới bên phải). Kiểu CRLF sẽ làm giá trị biến bị dính ký tự thừa.
+If using Windows, save `.env` and `deploy.sh` files with **LF** line endings (VS Code shows this in the bottom right corner). CRLF will append extraneous characters to variable values.
 
-## Phần 4: Viết script triển khai dùng chung
+## Part 4: Writing a Shared Deployment Script
 
-Tạo file **`deploy.sh`**. Một script duy nhất cho mọi môi trường, nhận tên môi trường và phiên bản image:
+Create **`deploy.sh`**. A single script for all environments that accepts the environment name and image version:
 
 ```bash
 #!/bin/bash
@@ -189,41 +189,51 @@ set -euo pipefail
 
 ENV_NAME=$1
 VERSION=$2
-IMAGE="${IMAGE:-hello-pipeline}"
 
+# Project configuration (modify this block when adapting to another project)
+APP_NAME="${APP_NAME:-hello-pipeline}"
+IMAGE="${IMAGE:-$APP_NAME}"
+APP_PORT=3000
+HEALTH_ENDPOINT="/health"
+
+# Validate environment and assign host port
 case "$ENV_NAME" in
-  staging) PORT=8081 ;;
-  prod)    PORT=8080 ;;
-  *) echo "Môi trường không hợp lệ: $ENV_NAME (dùng staging hoặc prod)"; exit 1 ;;
+  staging) HOST_PORT=8081 ;;
+  prod)    HOST_PORT=8080 ;;
+  *) echo "Invalid environment: $ENV_NAME (use staging or prod)"; exit 1 ;;
 esac
 
-NAME="hello-$ENV_NAME"
+NAME="$APP_NAME-$ENV_NAME"
 
+# Stop and remove existing container if running
 docker rm -f "$NAME" >/dev/null 2>&1 || true
-docker run -d --name "$NAME" --env-file "env/$ENV_NAME.env" -p "$PORT:3000" "$IMAGE:$VERSION"
 
-echo "Đang kiểm tra (smoke test) $ENV_NAME ..."
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  if curl -fsS "http://localhost:$PORT/health" >/dev/null; then
-    echo "Triển khai thành công lên $ENV_NAME:"
-    curl -fsS "http://localhost:$PORT/"
+# Run new container with environment configuration
+docker run -d --name "$NAME" --env-file "env/$ENV_NAME.env" -p "$HOST_PORT:$APP_PORT" "$IMAGE:$VERSION"
+
+# Run smoke test
+echo "Running smoke test on $ENV_NAME ..."
+for i in {1..10}; do
+  if curl -fsS "http://localhost:$HOST_PORT$HEALTH_ENDPOINT" >/dev/null; then
+    echo "Successfully deployed to $ENV_NAME!"
     exit 0
   fi
   sleep 1
 done
 
-echo "Smoke test thất bại!"
+# Smoke test failed
+echo "Smoke test failed!"
 docker logs "$NAME"
 exit 1
 ```
 
-Script làm bốn việc: xóa container cũ, chạy container mới với file cấu hình đúng môi trường, kiểm tra `/health` để chắc ứng dụng đã sống, rồi in lời chào ra để bạn thấy môi trường và phiên bản.
+The script performs four tasks: removes the old container, runs a new container with the appropriate environment configuration file, checks `/health` to ensure the application is healthy, and verifies that the deployment succeeded.
 
-## Phần 5: Luyện luồng thủ công trên máy bạn
+## Part 5: Manual Walkthrough on Your Machine
 
-Trước khi tự động hóa, hãy tự tay đi qua luồng một lần để hiểu từng bước.
+Before automating, practice the workflow manually to understand each step.
 
-**Bước 1: Phát hành v1 lên Staging rồi Production**
+**Step 1: Release v1 to Staging then Production**
 
 ```bash
 docker build --build-arg APP_VERSION=v1 -t hello-pipeline:v1 .
@@ -231,11 +241,11 @@ bash deploy.sh staging v1
 bash deploy.sh prod v1
 ```
 
-Kiểm tra: http://localhost:8081 hiện `Môi trường: staging | Phiên bản: v1`, còn http://localhost:8080 hiện `Môi trường: production | Phiên bản: v1`. Cùng một image, hai môi trường, hai cấu hình khác nhau.
+Verify: http://localhost:8081 displays `Environment: staging | Version: v1`, while http://localhost:8080 displays `Environment: production | Version: v1`. Same image, two environments, two different configurations.
 
-**Bước 2: Phát hành v2 đúng quy trình**
+**Step 2: Release v2 Following Proper Procedure**
 
-Trong `server.js`, đổi `Hello World!` thành `Hello World v2!`, rồi:
+In `server.js`, change `Hello World!` to `Hello World v2!`, then:
 
 ```bash
 npm test
@@ -243,42 +253,42 @@ docker build --build-arg APP_VERSION=v2 -t hello-pipeline:v2 .
 bash deploy.sh staging v2
 ```
 
-Mở cổng 8081 để kiểm tra. Prod (cổng 8080) vẫn là v1, đây chính là lợi ích của Staging. Hài lòng thì mới lên Prod:
+Open port 8081 to verify. Prod (port 8080) is still running v1 — this is the core benefit of Staging. Once satisfied, promote to Prod:
 
 ```bash
 bash deploy.sh prod v2
 ```
 
-**Bước 3: Rollback**
+**Step 3: Rollback**
 
-Giả sử v2 có lỗi, bạn đưa Prod về v1 bằng đúng script đó, không cần build lại:
+Suppose v2 has an issue; rollback Prod to v1 using the exact same script without rebuilding:
 
 ```bash
 bash deploy.sh prod v1
 ```
 
-**Bước 4: Dọn dẹp**
+**Step 4: Cleanup**
 
 ```bash
-docker rm -f hello-staging hello-prod
+docker rm -f hello-pipeline-staging hello-pipeline-prod
 ```
 
-## Phần 6: Tự động hóa bằng GitHub Actions
+## Part 6: Automation with GitHub Actions
 
-Bây giờ bạn giao các bước lặp đi lặp lại cho máy làm.
+Now automate these repetitive steps.
 
-**6.1. Chuẩn bị repo trên GitHub**
+**6.1. Prepare GitHub Repository**
 
-1. Tạo file `.gitignore` chứa một dòng `node_modules`.
-2. Trên GitHub, tạo repo mới tên `hello-pipeline`, chọn **Public** (xem lưu ý bên dưới), không tick thêm README.
-3. Vào **Settings → Environments**, tạo hai environment: `staging` và `production`.
-4. Trong environment `production`, bật **Required reviewers** và chọn chính bạn. Đây là chốt chặn “có người duyệt mới lên Prod”.
+1. Create a `.gitignore` containing `node_modules`.
+2. On GitHub, create a new repo named `hello-pipeline`, set to **Public** (see note below), without adding a README.
+3. Go to **Settings → Environments**, create two environments: `staging` and `production`.
+4. In the `production` environment, enable **Required reviewers** and select yourself. This is the approval gate before deploying to Prod.
 
-Lưu ý: tính năng bắt buộc duyệt của Environments miễn phí với repo public. Repo private cần gói GitHub trả phí.
+Note: The Required Reviewers feature for Environments is free on public repositories. Private repositories require a paid GitHub plan.
 
-**6.2. Tạo file pipeline**
+**6.2. Create Pipeline File**
 
-Tạo file **`.github/workflows/deploy.yml`**:
+Create **`.github/workflows/deploy.yml`**:
 
 ```yaml
 name: CI/CD
@@ -299,17 +309,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Chạy test
+      - name: Run tests
         run: npm test
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build và đẩy image
+      - name: Build and push image
         run: |
           docker build --build-arg APP_VERSION=${{ github.sha }} -t $IMAGE:${{ github.sha }} .
           docker push $IMAGE:${{ github.sha }}
@@ -320,15 +330,15 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Triển khai lên staging
+      - name: Deploy to staging
         run: bash deploy.sh staging ${{ github.sha }}
 
   deploy-production:
@@ -337,75 +347,73 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Triển khai lên production
+      - name: Deploy to production
         run: bash deploy.sh prod ${{ github.sha }}
 ```
 
-Chú ý hai điểm: image chỉ được **build một lần** ở job đầu, hai job sau chỉ kéo đúng image đó về; và `deploy.sh` chính là script bạn đã luyện ở Phần 5.
+Notice two key points: the image is **built only once** in the first job; the two subsequent deployment jobs pull that exact image; and `deploy.sh` is the exact script you practiced in Part 5.
 
-**6.3. Đẩy code lên GitHub**
+**6.3. Push Code to GitHub**
 
 ```bash
 git add .
-git commit -m "Hello pipeline: phiên bản đầu tiên"
-git remote add origin https://github.com/<tên-github-của-bạn>/hello-pipeline.git
+git commit -m "Hello pipeline: initial release"
+git remote add origin https://github.com/<your-github-username>/hello-pipeline.git
 git push -u origin main
 ```
 
-**6.4. Quan sát pipeline chạy**
+**6.4. Monitor Pipeline Execution**
 
-Vào tab **Actions** của repo và theo dõi:
+Navigate to the **Actions** tab of your repo:
 
-1. `build-and-test` chạy test, build rồi đẩy image lên GitHub Container Registry.
-2. `deploy-staging` tự chạy ngay sau đó. Mở log bước “Triển khai lên staging”, bạn sẽ thấy dòng lời chào có `Môi trường: staging`.
-3. `deploy-production` **dừng lại** với trạng thái chờ duyệt. Bấm **Review deployments**, tick `production`, bấm **Approve and deploy**.
-4. Job chạy xong, log hiện `Môi trường: production` cùng mã commit làm phiên bản.
+1. `build-and-test` runs tests, builds, and pushes the image to GitHub Container Registry.
+2. `deploy-staging` automatically runs immediately after. Open the "Deploy to staging" step logs; you will see the greeting with `Environment: staging`.
+3. `deploy-production` pauses with waiting for review status. Click **Review deployments**, check `production`, and click **Approve and deploy**.
+4. Once the job completes, the logs display `Environment: production` with the commit hash as the version.
 
-Lưu ý: ở bài này “server” là máy ảo tạm của GitHub nên container biến mất khi job kết thúc. Điều bạn đang luyện là luồng, cổng duyệt, smoke test và nguyên tắc “build một lần, triển khai nhiều nơi”, đúng cái mà pipeline thật cũng làm.
+Note: In this tutorial, the "server" is GitHub's ephemeral virtual machine, so containers terminate when the job ends. What you are practicing is the workflow, approval gate, smoke tests, and the principle of "build once, deploy anywhere", exactly as in production pipelines.
 
-## Phần 7: Bài tập luyện thêm
+## Part 7: Additional Exercises
 
-**Bài 1: Phát hành bình thường.** Đổi lời chào trong `server.js`, chạy `npm test` ở máy, commit rồi push. Theo dõi pipeline và duyệt lên production.
+**Exercise 1: Standard Release.** Change the greeting message in `server.js`, run `npm test` locally, commit, and push. Monitor the pipeline and approve deployment to production.
 
-**Bài 2: Test chặn lỗi.** Cố ý đổi lời chào thành “Xin chào” (test đang chờ chữ Hello World), rồi push. Pipeline sẽ đỏ ở `build-and-test` và hai job deploy không chạy. Đây là lý do CI tồn tại: lỗi bị chặn trước khi tới bất kỳ môi trường nào. Sửa lại và push để pipeline xanh.
+**Exercise 2: Tests Block Bad Code.** Intentionally break the test by changing the greeting without updating the test expectation, then push. The pipeline will fail at `build-and-test` and neither deploy job will run. This is why CI exists: errors are caught before reaching any environment. Fix and push to turn the pipeline green.
 
-**Bài 3: Từ chối duyệt.** Push một thay đổi, để staging chạy xong, rồi bấm **Reject** ở bước production. Staging đã có bản mới nhưng production không bị động tới.
+**Exercise 3: Reject Deployment.** Push a change, allow staging to complete, then click **Reject** on the production step. Staging gets the new version while production remains untouched.
 
-**Bài 4: Rollback.** Chạy `git revert HEAD`, rồi `git push`. Pipeline chạy lại toàn bộ luồng với code cũ. Trong thực tế, cách nhanh hơn là triển khai lại image cũ đã có sẵn trong registry (giống `bash deploy.sh prod v1` ở Phần 5), vì không cần build lại.
+**Exercise 4: Rollback.** Run `git revert HEAD`, then `git push`. The pipeline re-runs the entire workflow with the previous code. In production, a faster approach is redeploying an existing image from the registry (similar to `bash deploy.sh prod v1` in Part 5) without rebuilding.
 
-**Bài 5 (nâng cao): Chạy đúng image do CI tạo.** Vào trang repo, mục **Packages**, mở package `hello-pipeline` và lấy mã commit của một phiên bản. Đặt package ở chế độ Public (Package settings), rồi chạy ở máy bạn:
+**Exercise 5 (Advanced): Run the Exact CI Image Locally.** Go to your repo's **Packages** tab, open `hello-pipeline`, and copy the commit hash of a version. Set the package to Public (Package settings), then run locally:
 
 ```bash
-docker run --rm -p 9000:3000 -e APP_ENV=production ghcr.io/<tên-github-viết-thường>/hello-pipeline:<mã-commit>
+docker run --rm -p 9000:3000 -e APP_ENV=production ghcr.io/<lowercase-github-username>/hello-pipeline:<commit-hash>
 ```
 
-Đây chính là file đóng gói mà staging và production đã dùng, chỉ khác phần cấu hình.
+This is the exact packaged artifact used by staging and production, differing only in configuration.
 
-## Xử lý lỗi thường gặp
+## Troubleshooting Common Issues
 
-- **`permission denied` khi chạy `deploy.sh`**: dùng `bash deploy.sh ...` như trong bài, hoặc chạy `chmod +x deploy.sh`.
-- **`port is already allocated`**: có container hoặc ứng dụng khác đang chiếm cổng 8080/8081. Chạy `docker rm -f hello-staging hello-prod` hoặc đổi cổng trong script.
-- **Đẩy image bị `denied` hoặc 403**: kiểm tra khối `permissions` có `packages: write` và tên image phải viết thường (đã xử lý bằng `${GITHUB_REPOSITORY,,}`).
-- **Job production không chờ duyệt**: bạn chưa bật Required reviewers, hoặc đang dùng repo private ở gói miễn phí.
-- **Môi trường hiện sai, ví dụ `production` kèm ký tự lạ**: file `.env` đang xuống dòng kiểu CRLF, hãy lưu lại bằng LF.
-- **`npm test` không chạy test**: kiểm tra phiên bản Node (cần 20 trở lên) và file test nằm đúng thư mục `test`.
+- **`permission denied` when running `deploy.sh`**: Use `bash deploy.sh ...` as shown in the guide, or run `chmod +x deploy.sh`.
+- **`port is already allocated`**: Another container or application is occupying port 8080/8081. Run `docker rm -f hello-pipeline-staging hello-pipeline-prod` or change the ports in the script.
+- **Image push `denied` or 403**: Ensure the `permissions` block has `packages: write` and the image name is lowercase (handled by `${GITHUB_REPOSITORY,,}`).
+- **Production job does not wait for approval**: You have not enabled Required reviewers, or you are using a private repository on a free plan.
+- **Environment displayed incorrectly (e.g. `production` with strange trailing characters)**: The `.env` file uses CRLF line endings; re-save with LF.
+- **`npm test` does not run tests**: Check your Node version (20+ required) and ensure the test file is located in the `test` directory.
 
-## Bước tiếp theo: lên server thật
+## Next Steps: Deploying to a Real Server
 
-Khi đã quen luồng này, bạn nâng cấp theo thứ tự:
+Once comfortable with this workflow, upgrade progressively:
 
-1. Thuê một VPS nhỏ có cài Docker, tạo người dùng riêng cho việc triển khai và khóa SSH.
-2. Lưu địa chỉ server và khóa SSH vào **Environment secrets** của GitHub, tách riêng cho `staging` và `production`.
-3. Trong hai job deploy, thay lệnh `bash deploy.sh` bằng lệnh SSH vào server rồi chạy các lệnh `docker pull` và `docker run` với file cấu hình nằm trên server.
-4. Tách hẳn Staging và Production ra hai server (hoặc hai tài khoản cloud), mỗi môi trường có database riêng.
-5. Khi hệ thống lớn dần, mới cân nhắc Kubernetes và Terraform.
-
-Nếu bạn muốn, hãy cho tôi biết nhà cung cấp VPS bạn định dùng, tôi sẽ viết sẵn phiên bản triển khai qua SSH cho bước 3.
+1. Rent a small VPS with Docker installed, set up a dedicated deployment user, and configure SSH keys.
+2. Store server host address and SSH keys in GitHub **Environment secrets**, separated for `staging` and `production`.
+3. In both deploy jobs, replace `bash deploy.sh` with an SSH command to the server executing `docker pull` and `docker run` with server-side environment files.
+4. Completely separate Staging and Production across two distinct servers (or cloud accounts), each with its own database.
+5. As the system scales, consider adopting Kubernetes and Terraform.

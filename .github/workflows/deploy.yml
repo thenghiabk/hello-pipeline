@@ -16,17 +16,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Chạy test
+      - name: Run tests
         run: npm test
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build và đẩy image
+      - name: Build and push image
         run: |
           docker build --build-arg APP_VERSION=${{ github.sha }} -t $IMAGE:${{ github.sha }} .
           docker push $IMAGE:${{ github.sha }}
@@ -37,15 +37,15 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Triển khai lên staging
+      - name: Deploy to staging
         run: bash deploy.sh staging ${{ github.sha }}
 
   deploy-production:
@@ -54,13 +54,13 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Đặt tên image (chữ thường)
+      - name: Set image name (lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Đăng nhập registry
+      - name: Log in to registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Triển khai lên production
+      - name: Deploy to production
         run: bash deploy.sh prod ${{ github.sha }}
