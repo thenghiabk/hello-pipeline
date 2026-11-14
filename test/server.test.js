@@ -16,7 +16,7 @@ test('GET / should return Hello World', async () => {
         const res = await fetch(`http://127.0.0.1:${port}/`);
         const body = await res.text();
         assert.strictEqual(res.status, 200);
-        assert.ok(body, /Hello World!/);
+        assert.ok(body.includes('Hello World'), `Expected "Hello World" in response, got: ${body}`);
     } finally {
         server.close();
         server.closeAllConnections();
