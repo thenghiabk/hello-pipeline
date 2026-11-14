@@ -1,0 +1,10 @@
+{
+    "name": "hello-pipeline",
+    "version": "1.0.0",
+    "description": "A simple Node.js application to demonstrate a CI/CD pipeline.",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "test": "node --test"
+    }
+}
